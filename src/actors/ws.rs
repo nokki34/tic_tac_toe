@@ -1,26 +1,32 @@
-use crate::actors::server::{Connect, Disconnect, TicTacToeServer};
+use crate::actors::server::{
+  Connect, CreateMatch, Disconnect, JoinMatch, ListMatches, TicTacToeServer,
+};
+use crate::model::ClientMatch;
+
 use actix::prelude::*;
 use actix_web_actors::ws;
+use names::{Generator, Name};
 use serde_derive::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
-pub enum WsServerMessages {
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum WsDto {
   CreateMatch,
-  JoinMatch,
+  JoinMatch(Uuid),
   ListMatches,
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum WsMessages {
-  Server(WsServerMessages),
-  MatchSession(()),
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type", content = "data")]
+pub enum WsResponseDto {
+  ListMatchesResponse(Vec<ClientMatch>),
 }
 
-#[derive(Message)]
+#[derive(Message, Debug, Serialize, Deserialize)]
 #[rtype(result = "()")]
-pub struct WsMessage(WsMessages);
+pub struct WsMessage(WsDto);
 
 #[derive(Clone)]
 pub struct WsSession {
@@ -33,13 +39,14 @@ impl Actor for WsSession {
   type Context = ws::WebsocketContext<Self>;
 
   fn started(&mut self, ctx: &mut Self::Context) {
+    let mut generator = Generator::with_naming(Name::Plain); // Should be probably later moved out
     self.hb(ctx);
 
     self.tic_tac_toe_server.do_send(Connect {
       id: self.id,
-      name: "test".to_string(),
+      name: generator.next().unwrap(),
       addr: ctx.address().recipient(),
-    })
+    });
   }
 
   fn stopping(&mut self, _: &mut Self::Context) -> Running {
@@ -68,13 +75,44 @@ impl WsSession {
       ctx.ping(b"");
     });
   }
+
+  fn handle_ws_dto(&self, msg: WsDto, ctx: &mut ws::WebsocketContext<Self>) {
+    println!("{:?}", msg);
+    match msg {
+      WsDto::CreateMatch => self
+        .tic_tac_toe_server
+        .do_send(CreateMatch { user_id: self.id }),
+      WsDto::ListMatches => self
+        .tic_tac_toe_server
+        .send(ListMatches)
+        .into_actor(self)
+        .then(|res, _, ctx| {
+          match res {
+            Ok(resp) => {
+              let resp = WsResponseDto::ListMatchesResponse(resp);
+              let resp = serde_json::to_string(&resp).unwrap();
+              ctx.text(resp);
+            }
+            Err(e) => {
+              println!("Something is wrong, {:?}", e);
+            }
+          }
+          fut::ready(())
+        })
+        .wait(ctx),
+      WsDto::JoinMatch(id) => self.tic_tac_toe_server.do_send(JoinMatch {
+        match_id: id,
+        user_id: self.id,
+      }),
+    };
+  }
 }
 
 impl Handler<WsMessage> for WsSession {
   type Result = ();
 
   fn handle(&mut self, msg: WsMessage, ctx: &mut Self::Context) {
-    let contents = serde_json::to_string(&msg.0).unwrap();
+    let contents = serde_json::to_string(&msg).unwrap();
     ctx.text(contents);
   }
 }
@@ -90,8 +128,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
       Ok(msg) => msg,
     };
 
-    println!("{:?}", msg);
-
     match msg {
       ws::Message::Ping(msg) => {
         self.hb = Instant::now();
@@ -100,8 +136,18 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
       ws::Message::Pong(_) => {
         self.hb = Instant::now();
       }
-      ws::Message::Text(_msg) => {
-        // let msg: WsMessage = serde_json::from_str(&msg).unwrap();
+      ws::Message::Text(msg) => {
+        // println!("Trying to parse: {}", msg);
+        let msg = serde_json::from_str::<WsMessage>(&msg);
+        let msg = match msg {
+          Err(err) => {
+            eprintln!("Failed to parse message {:?}", err);
+            return;
+          }
+          Ok(msg) => msg,
+        };
+        // println!("Successfully parsed message {:?}", &msg);
+        self.handle_ws_dto(msg.0, ctx);
       }
       ws::Message::Binary(_) => {
         eprintln!("Unexpected binary");

@@ -1,5 +1,5 @@
 use crate::actors::ws::WsMessage;
-use crate::model::{Match, User};
+use crate::model::{ClientMatch, Match, User};
 use actix::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,32 +20,34 @@ pub struct Disconnect {
 }
 
 #[derive(Message)]
-#[rtype(result = "Vec<Match>")]
+#[rtype(result = "Vec<ClientMatch>")]
 pub struct ListMatches;
 
 #[derive(Message)]
 #[rtype(result = "(Result<(), CreateMatchError>)")]
 pub struct CreateMatch {
-  user_id: Uuid,
+  pub user_id: Uuid,
 }
 
 #[derive(Message)]
 #[rtype(result = "(Result<(), JoinMatchError>)")]
 pub struct JoinMatch {
-  match_id: Uuid,
-  user_id: Uuid,
+  pub match_id: Uuid,
+  pub user_id: Uuid,
 }
 
 #[derive(Clone)]
 pub struct TicTacToeServer {
-  users: HashMap<Uuid, User>,
-  matches: HashMap<Uuid, RefCell<Match>>,
+  pub users: HashMap<Uuid, User>,
+  pub matches: HashMap<Uuid, RefCell<Match>>,
 }
 
+#[derive(Debug)]
 pub enum CreateMatchError {
   NoSuchUser,
 }
 
+#[derive(Debug)]
 pub enum JoinMatchError {
   NoSuchMatch,
   NoSuchUser,
@@ -61,11 +63,11 @@ impl TicTacToeServer {
 
   fn create_match(&mut self, msg: CreateMatch) -> Result<(), CreateMatchError> {
     let user = &self.users.get(&msg.user_id);
-
     match user {
       Some(_) => {
-        let new_match = Match::new(msg.user_id);
-        self.matches.insert(Uuid::new_v4(), RefCell::new(new_match));
+        let id = Uuid::new_v4();
+        let new_match = Match::new(id, msg.user_id);
+        self.matches.insert(id, RefCell::new(new_match));
         Ok(())
       }
       None => Err(CreateMatchError::NoSuchUser),
@@ -88,16 +90,25 @@ impl TicTacToeServer {
     Ok(())
   }
 
-  fn list_available_matches(&self) -> Vec<Match> {
+  fn list_available_matches(&self) -> Vec<ClientMatch> {
     self
       .matches
       .values()
       .filter_map(|val| {
         let existing_match = val.borrow();
-        match existing_match.player2 {
-          Some(_) => Some(*existing_match),
-          None => None,
-        }
+
+        // Should say that the user has disconnected
+        if let Some(player1) = &self.users.get(&existing_match.player1) {
+          return match existing_match.player2 {
+            Some(_) => None,
+            None => Some(ClientMatch {
+              id: existing_match.id,
+              player1: player1.name.clone(),
+              player2: None,
+            }),
+          };
+        };
+        None
       })
       .collect()
   }
@@ -111,7 +122,7 @@ impl Handler<Connect> for TicTacToeServer {
   type Result = ();
 
   fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
-    println!("Someone joined");
+    println!("{} joined", msg.name);
     self.users.insert(
       msg.id,
       User {
