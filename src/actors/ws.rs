@@ -77,7 +77,6 @@ impl WsSession {
   }
 
   fn handle_ws_dto(&self, msg: WsDto, ctx: &mut ws::WebsocketContext<Self>) {
-    println!("{:?}", msg);
     match msg {
       WsDto::CreateMatch => self
         .tic_tac_toe_server
