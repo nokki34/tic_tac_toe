@@ -25,7 +25,7 @@ pub struct WsMessage(WsMessages);
 #[derive(Clone)]
 pub struct WsSession {
   id: Uuid,
-  ticTacToeServer: Addr<TicTacToeServer>,
+  tic_tac_toe_server: Addr<TicTacToeServer>,
   hb: Instant,
 }
 
@@ -35,7 +35,7 @@ impl Actor for WsSession {
   fn started(&mut self, ctx: &mut Self::Context) {
     self.hb(ctx);
 
-    self.ticTacToeServer.do_send(Connect {
+    self.tic_tac_toe_server.do_send(Connect {
       id: self.id,
       name: "test".to_string(),
       addr: ctx.address().recipient(),
@@ -43,17 +43,17 @@ impl Actor for WsSession {
   }
 
   fn stopping(&mut self, _: &mut Self::Context) -> Running {
-    self.ticTacToeServer.do_send(Disconnect { id: self.id });
+    self.tic_tac_toe_server.do_send(Disconnect { id: self.id });
     Running::Stop
   }
 }
 
 impl WsSession {
-  pub fn new(ticTacToeServer: Addr<TicTacToeServer>) -> WsSession {
+  pub fn new(tic_tac_toe_server: Addr<TicTacToeServer>) -> WsSession {
     WsSession {
       id: Uuid::new_v4(),
       hb: Instant::now(),
-      ticTacToeServer,
+      tic_tac_toe_server,
     }
   }
 
@@ -61,7 +61,7 @@ impl WsSession {
     ctx.run_interval(Duration::from_secs(5), |act, ctx| {
       if Instant::now().duration_since(act.hb) > Duration::from_secs(10) {
         println!("Websocket Client heartbeat failed, disconnecting!");
-        act.ticTacToeServer.do_send(Disconnect { id: act.id });
+        act.tic_tac_toe_server.do_send(Disconnect { id: act.id });
         ctx.stop();
         return;
       }
@@ -100,7 +100,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
       ws::Message::Pong(_) => {
         self.hb = Instant::now();
       }
-      ws::Message::Text(msg) => {
+      ws::Message::Text(_msg) => {
         // let msg: WsMessage = serde_json::from_str(&msg).unwrap();
       }
       ws::Message::Binary(_) => {
