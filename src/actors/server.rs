@@ -1,12 +1,12 @@
 use crate::actors::ws::WsMessage;
-use crate::model::{ClientMatch, Match, User};
+use crate::model::{ClientMatch, ClientUser, Match, User};
 use actix::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "ClientUser")]
 pub struct Connect {
   pub id: Uuid,
   pub name: String,
@@ -103,7 +103,10 @@ impl TicTacToeServer {
             Some(_) => None,
             None => Some(ClientMatch {
               id: existing_match.id,
-              player1: player1.name.clone(),
+              player1: ClientUser {
+                id: existing_match.player1,
+                name: player1.name.clone(),
+              },
               player2: None,
             }),
           };
@@ -119,17 +122,21 @@ impl Actor for TicTacToeServer {
 }
 
 impl Handler<Connect> for TicTacToeServer {
-  type Result = ();
+  type Result = MessageResult<Connect>;
 
-  fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
+  fn handle(&mut self, msg: Connect, _: &mut Context<Self>) -> Self::Result {
     println!("{} joined", msg.name);
     self.users.insert(
       msg.id,
       User {
-        name: msg.name,
+        name: msg.name.clone(),
         recipient: msg.addr,
       },
     );
+    MessageResult(ClientUser {
+      id: msg.id,
+      name: msg.name,
+    })
   }
 }
 

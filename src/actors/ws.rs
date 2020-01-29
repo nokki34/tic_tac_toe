@@ -1,7 +1,7 @@
 use crate::actors::server::{
   Connect, CreateMatch, Disconnect, JoinMatch, ListMatches, TicTacToeServer,
 };
-use crate::model::ClientMatch;
+use crate::model::{ClientMatch, ClientUser};
 
 use actix::prelude::*;
 use actix_web_actors::ws;
@@ -22,6 +22,7 @@ pub enum WsDto {
 #[serde(tag = "type", content = "data")]
 pub enum WsResponseDto {
   ListMatchesResponse(Vec<ClientMatch>),
+  LoginResponse(ClientUser),
 }
 
 #[derive(Message, Debug, Serialize, Deserialize)]
@@ -42,11 +43,28 @@ impl Actor for WsSession {
     let mut generator = Generator::with_naming(Name::Plain); // Should be probably later moved out
     self.hb(ctx);
 
-    self.tic_tac_toe_server.do_send(Connect {
-      id: self.id,
-      name: generator.next().unwrap(),
-      addr: ctx.address().recipient(),
-    });
+    self
+      .tic_tac_toe_server
+      .send(Connect {
+        id: self.id,
+        name: generator.next().unwrap(),
+        addr: ctx.address().recipient(),
+      })
+      .into_actor(self)
+      .then(|res, _, ctx| {
+        match res {
+          Ok(resp) => {
+            let resp = WsResponseDto::LoginResponse(resp);
+            let resp = serde_json::to_string(&resp).unwrap();
+            ctx.text(resp);
+          }
+          Err(e) => {
+            println!("Mailbox error, {:?}", e);
+          }
+        }
+        fut::ready(())
+      })
+      .wait(ctx);
   }
 
   fn stopping(&mut self, _: &mut Self::Context) -> Running {

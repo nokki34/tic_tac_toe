@@ -23,12 +23,18 @@ impl Match {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ClientMatch {
   pub id: Uuid,
-  pub player1: String,
-  pub player2: Option<String>,
+  pub player1: ClientUser,
+  pub player2: Option<ClientUser>,
 }
 
 #[derive(Debug, Clone)]
 pub struct User {
   pub name: String,
   pub recipient: Recipient<WsMessage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ClientUser {
+  pub id: Uuid,
+  pub name: String,
 }
