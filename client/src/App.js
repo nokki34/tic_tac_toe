@@ -1,5 +1,8 @@
+import { Router } from "@reach/router";
 import React, { useEffect, useState } from "react";
 import "./App.css";
+import Home from "./pages/Home";
+import Match from "./pages/Match";
 
 let ws = new WebSocket("ws://localhost:8000/game/");
 
@@ -12,7 +15,8 @@ const requestCreateMatch = () => {
 };
 
 function App() {
-  let [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [user, setUser] = useState(null);
   const [matches, setMatches] = useState([]);
   useEffect(() => {
     ws.addEventListener("open", function(event) {
@@ -28,10 +32,10 @@ function App() {
 
     ws.addEventListener("message", function(event) {
       const response = JSON.parse(event.data);
+      const data = response.data;
       const messageMap = {
-        ListMatchesResponse: () => {
-          setMatches(response.data);
-        }
+        LoginResponse: () => setUser(data),
+        ListMatchesResponse: () => setMatches(response.data)
       };
       messageMap[response.type] && messageMap[response.type]();
     });
@@ -46,25 +50,17 @@ function App() {
   };
   return (
     <div className="App">
-      <h1>{connected ? "Connected" : "Disconnected"}</h1>
-      <button disabled={!connected} onClick={onListMatchesClick}>
-        List
-      </button>
-      <button disabled={!connected} onClick={onCreateMatchClick}>
-        Create Match
-      </button>
-
-      <div className="matches">
-        {matches.map(it => (
-          <div>
-            <a href={it.id}>
-              <h3>
-                Match: {it.id} User: {it.player1}
-              </h3>
-            </a>
-          </div>
-        ))}
-      </div>
+      <Router>
+        <Home
+          path="/"
+          connected={connected}
+          user={user}
+          matches={matches}
+          onCreateMatchClick={onCreateMatchClick}
+          onListMatchesClick={onListMatchesClick}
+        />
+        <Match path="/match/:matchId" />
+      </Router>
     </div>
   );
 }
